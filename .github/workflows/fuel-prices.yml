@@ -1,0 +1,44 @@
+# Refresca los precios de las gasolineras del visor. Vive en el repositorio publicado
+# (valenciadades.github.io) porque viaja dentro de dist/: cada `npm run deploy` lo vuelve a
+# subir. Corre cada 6 horas y también tras cada despliegue, que trae la foto del día en que
+# se construyó la web.
+name: fuel-prices
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+
+concurrency:
+  group: fuel-prices
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python .github/update_fuel_prices.py .
+      - name: Commit si los precios han cambiado
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- data/fuel-stations.json; then
+            echo "Sin cambios"
+            exit 0
+          fi
+          git -c user.name=valenciadades -c user.email=devesa1998@users.noreply.github.com \
+              commit -qm "Actualiza los precios de las gasolineras" -- data/fuel-stations.json
+          git push -q
+          # Un push hecho con el token de la propia Action no dispara la publicación de Pages
+          gh api -X POST "repos/${{ github.repository }}/pages/builds" > /dev/null
